@@ -28,7 +28,7 @@ pip install -r requirements.txt
 3. Set up environment variables:
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and add your API keys (see Configuration section)
 ```
 
 ## Usage
@@ -102,7 +102,39 @@ PaperFinder is built using:
 
 ### Environment Variables
 
+#### Required
 - `OPENAI_API_KEY`: Required for LLM functionality
+
+#### Optional (for enhanced functionality)
+- `GOOGLE_SEARCH_API_KEY`: Google Custom Search JSON API key
+- `GOOGLE_SEARCH_CX`: Google Custom Search Engine ID
+- `SEMANTIC_SCHOLAR_API_KEY`: Semantic Scholar API key for higher rate limits
+
+#### API Setup Instructions
+
+**Google Custom Search API (100 free queries/day):**
+1. Create a project at [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable the Custom Search API in APIs & Services → Library
+3. Create an API key in APIs & Services → Credentials → Create Credentials → API Key
+4. Create a Custom Search Engine at [Google CSE](https://cse.google.com/cse/)
+   - Choose "Search the entire web" or add specific sites
+   - Get the Search Engine ID (CX parameter)
+5. Add to `.env`:
+   ```
+   GOOGLE_SEARCH_API_KEY=your_api_key_here
+   GOOGLE_SEARCH_CX=your_search_engine_id_here
+   ```
+
+**Semantic Scholar API:**
+- **Without API key**: 1000 requests/second shared among all users (may be throttled during heavy use)
+- **With API key**: 1 request/second dedicated rate limit + better support
+- Request API key at [Semantic Scholar API](https://www.semanticscholar.org/product/api)
+- Add to `.env` if you have one:
+   ```
+   SEMANTIC_SCHOLAR_API_KEY=your_api_key_here
+   ```
+
+**DBLP API:** No authentication required, uses public endpoints
 
 ### Logging
 

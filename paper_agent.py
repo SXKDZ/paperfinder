@@ -73,6 +73,26 @@ def dblp_search(query: str, max_results: int = 5) -> str:
 
 
 @tool
+def dblp_search_authors(query: str, max_results: int = 5) -> str:
+    """Search DBLP for authors. Good for finding author profiles and affiliations."""
+    try:
+        results = asyncio.run(SEARCH_TOOLS["dblp_search"].search_authors(query, max_results))
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error searching DBLP authors: {e}"
+
+
+@tool
+def dblp_search_venues(query: str, max_results: int = 5) -> str:
+    """Search DBLP for venues (conferences, journals). Good for finding venue information."""
+    try:
+        results = asyncio.run(SEARCH_TOOLS["dblp_search"].search_venues(query, max_results))
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error searching DBLP venues: {e}"
+
+
+@tool
 def semantic_scholar_search(query: str, max_results: int = 5) -> str:
     """Search Semantic Scholar for papers with rich metadata and citations."""
     try:
@@ -82,6 +102,122 @@ def semantic_scholar_search(query: str, max_results: int = 5) -> str:
         return safe_json_dumps(results, indent=2)
     except Exception as e:
         return f"Error searching Semantic Scholar: {e}"
+
+
+@tool
+def semantic_scholar_search_authors(query: str, max_results: int = 5) -> str:
+    """Search Semantic Scholar for authors with detailed metrics (H-index, citations, etc.)."""
+    try:
+        results = asyncio.run(
+            SEARCH_TOOLS["semantic_scholar"].search_authors(query, max_results)
+        )
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error searching Semantic Scholar authors: {e}"
+
+
+@tool
+def semantic_scholar_paper_details(paper_id: str) -> str:
+    """Get detailed information about a specific paper using Semantic Scholar paper ID."""
+    try:
+        result = asyncio.run(
+            SEARCH_TOOLS["semantic_scholar"].get_paper_details(paper_id)
+        )
+        return safe_json_dumps(result, indent=2)
+    except Exception as e:
+        return f"Error getting paper details: {e}"
+
+
+@tool
+def semantic_scholar_author_details(author_id: str) -> str:
+    """Get detailed information about a specific author using Semantic Scholar author ID."""
+    try:
+        result = asyncio.run(
+            SEARCH_TOOLS["semantic_scholar"].get_author_details(author_id)
+        )
+        return safe_json_dumps(result, indent=2)
+    except Exception as e:
+        return f"Error getting author details: {e}"
+
+
+@tool
+def semantic_scholar_paper_batch(paper_ids: str) -> str:
+    """Get details for multiple papers using comma-separated Semantic Scholar paper IDs (max 500)."""
+    try:
+        # Split the comma-separated string into a list
+        id_list = [pid.strip() for pid in paper_ids.split(',')]
+        
+        import requests
+        headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
+        
+        response = requests.post(
+            SEARCH_TOOLS["semantic_scholar"].endpoints["paper_batch"],
+            json={"ids": id_list},
+            headers=headers,
+            timeout=15
+        )
+        
+        if response.status_code != 200:
+            return f"Error: {response.status_code} - {response.text}"
+        
+        results = response.json()
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error in batch paper lookup: {e}"
+
+
+@tool
+def semantic_scholar_author_batch(author_ids: str) -> str:
+    """Get details for multiple authors using comma-separated Semantic Scholar author IDs (max 1000)."""
+    try:
+        # Split the comma-separated string into a list
+        id_list = [aid.strip() for aid in author_ids.split(',')]
+        
+        import requests
+        headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
+        
+        response = requests.post(
+            SEARCH_TOOLS["semantic_scholar"].endpoints["author_batch"],
+            json={"ids": id_list},
+            headers=headers,
+            timeout=15
+        )
+        
+        if response.status_code != 200:
+            return f"Error: {response.status_code} - {response.text}"
+        
+        results = response.json()
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error in batch author lookup: {e}"
+
+
+@tool
+def semantic_scholar_snippet_search(query: str, max_results: int = 5) -> str:
+    """Search Semantic Scholar for text snippets from papers. Good for finding specific content or quotes."""
+    try:
+        import requests
+        headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
+        
+        params = {
+            "query": query,
+            "limit": min(max_results, 100)
+        }
+        
+        response = requests.get(
+            SEARCH_TOOLS["semantic_scholar"].endpoints["snippet_search"],
+            params=params,
+            headers=headers,
+            timeout=15
+        )
+        
+        if response.status_code != 200:
+            return f"Error: {response.status_code} - {response.text}"
+        
+        results = response.json()
+        return safe_json_dumps(results, indent=2)
+    except Exception as e:
+        return f"Error in snippet search: {e}"
 
 
 @tool
@@ -308,7 +444,15 @@ class PaperAgent:
             arxiv_direct,
             google_scholar_search,
             dblp_search,
+            dblp_search_authors,
+            dblp_search_venues,
             semantic_scholar_search,
+            semantic_scholar_search_authors,
+            semantic_scholar_paper_details,
+            semantic_scholar_author_details,
+            semantic_scholar_paper_batch,
+            semantic_scholar_author_batch,
+            semantic_scholar_snippet_search,
             google_search,
             acl_anthology_search,
             doi_search,
@@ -356,7 +500,15 @@ Bio/Med: semantic_scholar_search
 
 AVAILABLE TOOLS:
 - dblp_search(query, max_results=5): CS conferences/journals (highest quality)
-- semantic_scholar_search(query, max_results=5): Rich metadata, all domains
+- dblp_search_authors(query, max_results=5): Search DBLP for authors
+- dblp_search_venues(query, max_results=5): Search DBLP for venues/conferences
+- semantic_scholar_search(query, max_results=5): Rich metadata, all domains ⚠️ RATE LIMITED - use sparingly
+- semantic_scholar_search_authors(query, max_results=5): Search authors with metrics ⚠️ RATE LIMITED
+- semantic_scholar_paper_details(paper_id): Get detailed paper info by ID ⚠️ RATE LIMITED
+- semantic_scholar_author_details(author_id): Get detailed author info by ID ⚠️ RATE LIMITED
+- semantic_scholar_paper_batch(paper_ids): Get multiple papers by IDs (comma-separated) ⚠️ RATE LIMITED
+- semantic_scholar_author_batch(author_ids): Get multiple authors by IDs (comma-separated) ⚠️ RATE LIMITED
+- semantic_scholar_snippet_search(query, max_results=5): Search text snippets from papers ⚠️ RATE LIMITED
 - acl_anthology_search(query, max_results=5): NLP/linguistics papers
 - arxiv_search(query, max_results=5): Preprints (use sparingly)
 - arxiv_direct(arxiv_id): Get paper by arXiv ID
@@ -364,6 +516,25 @@ AVAILABLE TOOLS:
 - download_file(url, filename=None): Download PDFs
 - read_pdf_text(pdf_path): Extract text from LOCAL PDFs
 - read_webpage(url): Extract metadata from webpages
+
+RATE LIMITING GUIDANCE:
+- Semantic Scholar APIs are strictly rate limited and may be slow during heavy usage
+- Prefer DBLP, ACL Anthology, or arXiv when possible to avoid rate limits
+- If you get rate limited (429 errors), wait and try fewer semantic_scholar calls
+- Use semantic_scholar_paper_batch() and semantic_scholar_author_batch() for efficiency when you have multiple IDs
+
+SEMANTIC SCHOLAR ID SYSTEM:
+- Semantic Scholar uses multiple ID types for papers:
+  * Primary: Semantic Scholar SHA (e.g., "649def34f8be52c8b66281af98ae884c09aef38b")
+  * Secondary: CorpusId (e.g., "CorpusId:215416146")
+  * External: DOI, ArXiv ID, MAG, ACL, PMID, PMCID, URLs
+- Author IDs: Numeric strings (e.g., "1741101", "40348417")
+- Detail functions (semantic_scholar_paper_details, semantic_scholar_author_details) accept:
+  * Semantic Scholar IDs (primary/secondary)
+  * External IDs (DOI, ArXiv, etc.)
+- Batch functions require comma-separated Semantic Scholar IDs only
+- To get Semantic Scholar IDs: Use search results' paper_id or author_id fields
+- Example: semantic_scholar_search("query") → extract paper_id → semantic_scholar_paper_details(paper_id)
 
 CRITICAL: You must REASON through the deduplication, ranking, and filtering process yourself:
 1. DEDUPLICATE: Remove duplicate papers by comparing titles (even if from different sources/years). If same paper appears as both conference and preprint, KEEP ONLY the formal publication.
@@ -404,7 +575,8 @@ PDF tools require download_file() first. Always format final results as proper B
                 return "tools"
 
             # Check if this is a refinement prompt that should continue
-            if hasattr(last_message, "content") and last_message.content:
+            if (hasattr(last_message, "content") and last_message.content and 
+                last_message.__class__.__name__ == "AIMessage"):
                 if "MANDATORY PDF REFINEMENT" in last_message.content:
                     return "continue_refinement"
 
@@ -474,25 +646,47 @@ PDF tools require download_file() first. Always format final results as proper B
                     )
 
             # Display tool calls and add them to the message history for LLM awareness
-            if console and hasattr(response, "tool_calls") and response.tool_calls:
+            if hasattr(response, "tool_calls") and response.tool_calls:
                 tool_summary = []
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.get("name", "Unknown")
                     args = tool_call.get("args", {})
-                    console.print(f"🔧 [cyan]Using tool: {tool_name}[/cyan]")
+                    
+                    if console:
+                        console.print(f"🔧 [cyan]Using tool: {tool_name}[/cyan]")
+                        if "query" in args:
+                            console.print(f"   Query: {args['query']}")
+                        elif "url" in args:
+                            console.print(f"   URL: {args['url']}")
+                        elif "arxiv_id" in args:
+                            console.print(f"   arXiv ID: {args['arxiv_id']}")
+                        elif "doi" in args:
+                            console.print(f"   DOI: {args['doi']}")
+                        elif "pdf_path" in args:
+                            console.print(f"   PDF Path: {args['pdf_path']}")
+                        elif "filepath" in args:
+                            console.print(f"   File Path: {args['filepath']}")
+                        elif "filename" in args:
+                            console.print(f"   Filename: {args['filename']}")
+                        elif "text" in args:
+                            console.print(f"   Text (preview): {str(args['text'])[:50]}...")
+                    
+                    # Always add to tool summary regardless of args structure
                     if "query" in args:
-                        console.print(f"   Query: {args['query']}")
                         tool_summary.append(f"{tool_name}(query='{args['query']}')")
                     elif "url" in args:
-                        console.print(f"   URL: {args['url']}")
                         tool_summary.append(f"{tool_name}(url='{args['url']}')")
                     elif "arxiv_id" in args:
-                        console.print(f"   arXiv ID: {args['arxiv_id']}")
-                        tool_summary.append(
-                            f"{tool_name}(arxiv_id='{args['arxiv_id']}')"
-                        )
+                        tool_summary.append(f"{tool_name}(arxiv_id='{args['arxiv_id']}')")
+                    elif "doi" in args:
+                        tool_summary.append(f"{tool_name}(doi='{args['doi']}')")
+                    elif "pdf_path" in args:
+                        tool_summary.append(f"{tool_name}(pdf_path='{args['pdf_path']}')")
+                    elif "filepath" in args:
+                        tool_summary.append(f"{tool_name}(filepath='{args['filepath']}')")
                     else:
-                        tool_summary.append(f"{tool_name}({args})")
+                        # Fallback: always include tool name even if args don't match patterns
+                        tool_summary.append(f"{tool_name}")
 
                     # Log tool call
                     if logger and query_id:
@@ -500,9 +694,8 @@ PDF tools require download_file() first. Always format final results as proper B
                             query_id, "tool_call", f"{tool_name}: {args}"
                         )
 
-                # Add tool call summary to state for LLM awareness
-                if tool_summary:
-                    state["tools_used"] = state.get("tools_used", []) + tool_summary
+                # Always add tool call summary to state for LLM awareness
+                state["tools_used"] = state.get("tools_used", []) + tool_summary
 
             # Increment iteration count
             iteration_count = state.get("iteration_count", 0) + 1
