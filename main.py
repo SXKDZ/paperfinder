@@ -73,6 +73,10 @@ async def main():
             console.print("\n👋 [green]Goodbye![/green]")
             logger.close_session()
             break
+        except EOFError:
+            console.print("\n👋 [green]Goodbye![/green]")
+            logger.close_session()
+            break
         except Exception as e:
             console.print(f"❌ [red]Error: {e}[/red]")
     

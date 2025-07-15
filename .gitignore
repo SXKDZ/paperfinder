@@ -212,3 +212,6 @@ logs/
 *.pdf
 *.doc
 *.docx
+
+# Claude Code settings
+.claude/

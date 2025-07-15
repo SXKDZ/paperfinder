@@ -539,7 +539,7 @@ SEMANTIC SCHOLAR ID SYSTEM:
 CRITICAL: You must REASON through the deduplication, ranking, and filtering process yourself:
 1. DEDUPLICATE: Remove duplicate papers by comparing titles (even if from different sources/years). If same paper appears as both conference and preprint, KEEP ONLY the formal publication.
 2. RANK: Order papers by relevance to the user's query
-3. FILTER: Remove papers that are clearly not relevant
+3. FILTER: Remove papers that are clearly not relevant - if initial search results are not closely related to the user's query, return empty results and try different search strategies or escalate to google_search
 4. CHOOSE: Select only the most appropriate ones for the user's query
 
 Example: If you find "SciBench" in both ICML 2024 and arXiv 2023, keep ONLY the ICML 2024 version (formal > preprint).
@@ -574,10 +574,12 @@ PDF tools require download_file() first. Always format final results as proper B
             if hasattr(last_message, "tool_calls") and last_message.tool_calls:
                 return "tools"
 
-            # Check if this is a refinement prompt that should continue
+            # Check if this is a BibTeX confirmation/refinement prompt that should continue
             if (hasattr(last_message, "content") and last_message.content and 
                 last_message.__class__.__name__ == "AIMessage"):
-                if "MANDATORY PDF REFINEMENT" in last_message.content:
+                if ("JSON results have been converted to BibTeX format" in last_message.content or
+                    "Please review the BibTeX entries" in last_message.content or
+                    "Please review and refine these entries" in last_message.content):
                     return "continue_refinement"
 
             return "end"
@@ -703,35 +705,21 @@ PDF tools require download_file() first. Always format final results as proper B
             return {"messages": [response], "iteration_count": iteration_count}
 
         def format_final_answer(state: AgentState):
-            """Format the final answer with BibTeX"""
+            """Process JSON results and convert to BibTeX"""
             messages = state["messages"]
+            console = state.get("console")
 
             # Look for reranked results first (these are the filtered/relevant ones)
             reranked_results = []
             search_results = []
 
             for message in reversed(messages):  # Start from most recent messages
-                if hasattr(message, "content") and message.content:
+                if hasattr(message, "content") and message.content and message.__class__.__name__ == "AIMessage":
                     content = message.content
 
-                    # Look for JSON data in markdown code blocks (most recent first)
+
+                    # Look for BibTeX entries and extract them (final refined output)
                     import re
-
-                    json_match = re.search(
-                        r"```json\s*(\[.*?\])\s*```", content, re.DOTALL
-                    )
-                    if json_match:
-                        try:
-                            results = json.loads(json_match.group(1))
-                            if isinstance(results, list) and all(
-                                isinstance(r, dict) for r in results
-                            ):
-                                reranked_results = results
-                                break
-                        except json.JSONDecodeError:
-                            pass
-
-                    # Look for BibTeX entries and extract them instead
                     bibtex_pattern = (
                         r"```bibtex\s*((?:@\w+\{[^}]+,(?:[^@])*?\}\s*)+)\s*```"
                     )
@@ -743,6 +731,27 @@ PDF tools require download_file() first. Always format final results as proper B
                             "messages": [AIMessage(content=final_answer)],
                             "final_answer": final_answer,
                         }
+
+                    # Look for JSON data in markdown code blocks (most recent first)
+                    json_match = re.search(
+                        r"```json\s*(\[.*?\])\s*```", content, re.DOTALL
+                    )
+                    if json_match:
+                        try:
+                            # Clean up common JSON issues
+                            json_content = json_match.group(1)
+                            # Remove trailing commas before closing brackets/braces
+                            json_content = re.sub(r',\s*}', '}', json_content)
+                            json_content = re.sub(r',\s*]', ']', json_content)
+                            
+                            results = json.loads(json_content)
+                            if isinstance(results, list) and all(
+                                isinstance(r, dict) for r in results
+                            ):
+                                reranked_results = results
+                                break
+                        except json.JSONDecodeError:
+                            pass
 
                     # Fallback: look for direct JSON at start of message
                     try:
@@ -764,6 +773,7 @@ PDF tools require download_file() first. Always format final results as proper B
 
             # Use reranked results if available, otherwise use all search results
             final_results = reranked_results if reranked_results else search_results
+            
 
             # Remove duplicates based on title with priority for formal publications
             seen_titles = {}  # title -> best_result
@@ -829,7 +839,7 @@ PDF tools require download_file() first. Always format final results as proper B
             # Limit to top 5 results
             unique_results = unique_results[:5]
 
-            # Format as BibTeX
+            # Convert JSON to BibTeX and ask LLM to confirm/refine
             if unique_results:
                 from bibtex_formatter import format_to_bibtex
 
@@ -840,7 +850,7 @@ PDF tools require download_file() first. Always format final results as proper B
                         bibtex_entries.append(bibtex)
 
                 if bibtex_entries:
-                    final_answer = "\n\n".join(bibtex_entries)
+                    initial_bibtex = "\n\n".join(bibtex_entries)
 
                     # Check if any papers have PDFs available for refinement
                     has_pdfs = any(
@@ -850,32 +860,57 @@ PDF tools require download_file() first. Always format final results as proper B
                         for result in unique_results
                     )
 
+                    # Create confirmation/refinement prompt
                     if has_pdfs:
-                        console = state.get("console")
                         if console:
                             console.print(
-                                "🔍 [yellow]PDFs available - attempting refinement...[/yellow]"
+                                "🔍 [yellow]Converting to BibTeX and checking PDFs for refinement...[/yellow]"
                             )
 
-                        # Add refinement prompt to continue the workflow
-                        refinement_prompt = f"""
-                        INITIAL BIBTEX GENERATED. Now perform MANDATORY PDF REFINEMENT:
-                        
-                        Papers found with potential PDFs:
-                        {json.dumps(unique_results, indent=2)}
-                        
-                        For each paper with available PDF URLs, you MUST:
-                        1. Download the PDF using download_file()
-                        2. Extract text using read_pdf_text()
-                        3. Verify and improve the BibTeX entry based on actual PDF content
-                        4. Generate refined BibTeX with accurate metadata from the PDF
-                        
-                        Continue with PDF refinement now.
-                        """
+                        confirmation_prompt = f"""
+JSON results have been converted to BibTeX format. Please review and refine these entries:
+
+```bibtex
+{initial_bibtex}
+```
+
+MANDATORY TASKS:
+1. Review the BibTeX entries for accuracy and completeness
+2. For papers with available PDFs, download and extract content to refine metadata:
+
+Papers with potential PDFs:
+{json.dumps(unique_results, indent=2)}
+
+For each paper with PDF URLs:
+1. Use download_file() to download the PDF
+2. Use read_pdf_text() to extract text content
+3. Use extract_pdf_metadata() to get PDF metadata
+4. Refine the BibTeX entry based on actual PDF content (title, authors, venue, year, etc.)
+
+After refinement, output the final BibTeX entries in a ```bibtex``` code block.
+"""
 
                         return {
-                            "messages": [AIMessage(content=refinement_prompt)],
-                            "final_answer": final_answer,
+                            "messages": [AIMessage(content=confirmation_prompt)],
+                        }
+                    else:
+                        if console:
+                            console.print(
+                                "📄 [yellow]Converting to BibTeX format...[/yellow]"
+                            )
+
+                        confirmation_prompt = f"""
+JSON results have been converted to BibTeX format. Please review these entries:
+
+```bibtex
+{initial_bibtex}
+```
+
+Please review the BibTeX entries for accuracy and completeness. If they look correct, output the final BibTeX entries in a ```bibtex``` code block.
+"""
+
+                        return {
+                            "messages": [AIMessage(content=confirmation_prompt)],
                         }
                 else:
                     final_answer = "No papers found or could not format results."
@@ -931,7 +966,15 @@ PDF tools require download_file() first. Always format final results as proper B
             },
         )
         workflow.add_edge("tools", "agent")
-        workflow.add_edge("format", END)
+        workflow.add_conditional_edges(
+            "format",
+            should_continue,
+            {
+                "tools": "tools",
+                "end": END,
+                "continue_refinement": "agent",  # Continue to agent for refinement
+            },
+        )
 
         return workflow.compile()
 
