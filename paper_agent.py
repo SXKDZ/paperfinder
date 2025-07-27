@@ -2,20 +2,21 @@
 PaperFinder LLM Agent using LangGraph with ReAct reasoning
 """
 
-import os
-import json
 import asyncio
-from typing import List, Dict, Any, Annotated
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+import json
+import os
+from typing import Annotated, Any, Dict, List
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
-from langgraph.graph import StateGraph, START, END
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from typing_extensions import TypedDict
 
-from search_tools import SEARCH_TOOLS
 from json_utils import safe_json_dumps
+from search_tools import SEARCH_TOOLS
 
 
 class AgentState(TypedDict):
@@ -76,7 +77,9 @@ def dblp_search(query: str, max_results: int = 5) -> str:
 def dblp_search_authors(query: str, max_results: int = 5) -> str:
     """Search DBLP for authors. Good for finding author profiles and affiliations."""
     try:
-        results = asyncio.run(SEARCH_TOOLS["dblp_search"].search_authors(query, max_results))
+        results = asyncio.run(
+            SEARCH_TOOLS["dblp_search"].search_authors(query, max_results)
+        )
         return safe_json_dumps(results, indent=2)
     except Exception as e:
         return f"Error searching DBLP authors: {e}"
@@ -86,7 +89,9 @@ def dblp_search_authors(query: str, max_results: int = 5) -> str:
 def dblp_search_venues(query: str, max_results: int = 5) -> str:
     """Search DBLP for venues (conferences, journals). Good for finding venue information."""
     try:
-        results = asyncio.run(SEARCH_TOOLS["dblp_search"].search_venues(query, max_results))
+        results = asyncio.run(
+            SEARCH_TOOLS["dblp_search"].search_venues(query, max_results)
+        )
         return safe_json_dumps(results, indent=2)
     except Exception as e:
         return f"Error searching DBLP venues: {e}"
@@ -145,21 +150,22 @@ def semantic_scholar_paper_batch(paper_ids: str) -> str:
     """Get details for multiple papers using comma-separated Semantic Scholar paper IDs (max 500)."""
     try:
         # Split the comma-separated string into a list
-        id_list = [pid.strip() for pid in paper_ids.split(',')]
-        
+        id_list = [pid.strip() for pid in paper_ids.split(",")]
+
         import requests
+
         headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
-        
+
         response = requests.post(
             SEARCH_TOOLS["semantic_scholar"].endpoints["paper_batch"],
             json={"ids": id_list},
             headers=headers,
-            timeout=15
+            timeout=15,
         )
-        
+
         if response.status_code != 200:
             return f"Error: {response.status_code} - {response.text}"
-        
+
         results = response.json()
         return safe_json_dumps(results, indent=2)
     except Exception as e:
@@ -171,21 +177,22 @@ def semantic_scholar_author_batch(author_ids: str) -> str:
     """Get details for multiple authors using comma-separated Semantic Scholar author IDs (max 1000)."""
     try:
         # Split the comma-separated string into a list
-        id_list = [aid.strip() for aid in author_ids.split(',')]
-        
+        id_list = [aid.strip() for aid in author_ids.split(",")]
+
         import requests
+
         headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
-        
+
         response = requests.post(
             SEARCH_TOOLS["semantic_scholar"].endpoints["author_batch"],
             json={"ids": id_list},
             headers=headers,
-            timeout=15
+            timeout=15,
         )
-        
+
         if response.status_code != 200:
             return f"Error: {response.status_code} - {response.text}"
-        
+
         results = response.json()
         return safe_json_dumps(results, indent=2)
     except Exception as e:
@@ -197,23 +204,21 @@ def semantic_scholar_snippet_search(query: str, max_results: int = 5) -> str:
     """Search Semantic Scholar for text snippets from papers. Good for finding specific content or quotes."""
     try:
         import requests
+
         headers = SEARCH_TOOLS["semantic_scholar"]._get_headers()
-        
-        params = {
-            "query": query,
-            "limit": min(max_results, 100)
-        }
-        
+
+        params = {"query": query, "limit": min(max_results, 100)}
+
         response = requests.get(
             SEARCH_TOOLS["semantic_scholar"].endpoints["snippet_search"],
             params=params,
             headers=headers,
-            timeout=15
+            timeout=15,
         )
-        
+
         if response.status_code != 200:
             return f"Error: {response.status_code} - {response.text}"
-        
+
         results = response.json()
         return safe_json_dumps(results, indent=2)
     except Exception as e:
@@ -244,8 +249,9 @@ def acl_anthology_search(query: str, max_results: int = 5) -> str:
 def download_file(url: str, filename: str = None) -> str:
     """Download a file from URL (PDF, document, etc.). Returns the local file path."""
     try:
-        from interactive_tools import file_manager
         import asyncio
+
+        from interactive_tools import file_manager
 
         filepath = asyncio.run(file_manager.download_file(url, filename))
         return f"File downloaded successfully to: {filepath}"
@@ -283,8 +289,9 @@ def read_webpage(url: str) -> str:
 def read_pdf_text(pdf_path: str) -> str:
     """Extract and read text content from a PDF file."""
     try:
-        from interactive_tools import pdf_processor
         import asyncio
+
+        from interactive_tools import pdf_processor
 
         text = asyncio.run(pdf_processor.extract_text_pdfplumber(pdf_path))
         if not text.strip():
@@ -374,8 +381,9 @@ def extract_urls_from_text(text: str) -> str:
 def doi_search(doi: str) -> str:
     """Search for a paper by DOI using CrossRef API."""
     try:
-        import requests
         import json
+
+        import requests
 
         # Clean DOI
         doi = doi.strip()
@@ -472,11 +480,37 @@ class PaperAgent:
         self.system_prompt = """You are a research assistant that finds academic papers and returns them in BibTeX format.
 
 WORKFLOW:
-1. Choose appropriate search tools based on domain
-2. Search, deduplicate, rank by relevance  
-3. Prioritize formal publications over preprints
-4. Provide initial results as JSON for BibTeX formatting
-5. Download PDFs and refine BibTeX based on actual content
+1. **FOLLOW-UP QUERIES**: If the user message contains "Previous results:" followed by BibTeX entries:
+   - This is a FOLLOW-UP QUERY to process existing results
+   - **FIRST**: Try to answer using the provided BibTeX data when possible
+   - **WHEN TO USE TOOLS**:
+     * For filtering/selecting from existing results: NO tools needed, work with provided data
+     * For missing venue/metadata: Use semantic_scholar_paper_details or read_webpage to get more info
+     * For broader searches: Use appropriate search tools when requested (e.g., "find similar papers")
+     * For related work: Use search tools to find additional papers
+   - **WHEN NOT TO USE TOOLS**:
+     * Simple filtering requests ("most relevant", "only keep one")
+     * Format changes ("include arXiv ID instead of N/A")
+     * Basic information extraction from existing data
+   - For venue questions: First check existing fields, then use tools if needed for missing info
+   - **CRITICAL arXiv FORMATTING**: When you find ArXiv ID in externalIds, format as:
+     ```
+     @misc{AuthorYear,
+       title = {Title},
+       author = {Authors},
+       year = {Year},
+       note = {arXiv:XXXX.XXXXX},
+       url = {URL}
+     }
+     ```
+     NOT as @article with journal = {N/A}
+   - For filtering requests: Return only the most relevant entries as requested
+
+2. **NEW QUERIES**: Only for queries without "Previous results:":
+   - Choose appropriate search tools based on domain
+   - Search, deduplicate, rank by relevance  
+   - Prioritize formal publications over preprints
+   - Provide initial results as JSON for BibTeX formatting
 
 REQUIRED OUTPUT FORMAT: Always end your response with filtered results as JSON:
 ```json
@@ -485,12 +519,18 @@ REQUIRED OUTPUT FORMAT: Always end your response with filtered results as JSON:
     "title": "Paper Title Here",
     "authors": ["Author One", "Author Two"],
     "year": "2024",
-    "venue": "Conference Name",
+    "venue": "Conference Name OR arXiv.org",
+    "arxiv_id": "XXXX.XXXXX (if arXiv paper)",
     "url": "https://example.com",
     "abstract": "Paper abstract here..."
   }
 ]
 ```
+
+CRITICAL FOR ARXIV PAPERS: When tool responses contain "arxiv_id" field:
+- Include "arxiv_id": "XXXX.XXXXX" in your JSON output
+- Set "venue": "arXiv.org" (not empty string)
+- This will trigger proper @misc formatting with note = {arXiv:XXXX.XXXXX}
 
 SEARCH TOOLS (Priority Order):
 CS/AI: dblp_search → semantic_scholar_search → arxiv_search
@@ -562,11 +602,9 @@ PDF tools require download_file() first. Always format final results as proper B
             last_message = messages[-1]
 
             # Check iteration count to prevent infinite loops
-            iteration_count = state.get("iteration_count", 0)
-            if iteration_count > 15:  # Increased to allow for PDF refinement
-                console = state.get("console")
-                if console:
-                    console.print(
+            if state.get("iteration_count", 0) > 15:
+                if state.get("console"):
+                    state["console"].print(
                         "⚠️ [yellow]Max iterations reached, finishing...[/yellow]"
                     )
                 return "end"
@@ -575,11 +613,17 @@ PDF tools require download_file() first. Always format final results as proper B
                 return "tools"
 
             # Check if this is a BibTeX confirmation/refinement prompt that should continue
-            if (hasattr(last_message, "content") and last_message.content and 
-                last_message.__class__.__name__ == "AIMessage"):
-                if ("JSON results have been converted to BibTeX format" in last_message.content or
-                    "Please review the BibTeX entries" in last_message.content or
-                    "Please review and refine these entries" in last_message.content):
+            if (
+                hasattr(last_message, "content")
+                and last_message.content
+                and last_message.__class__.__name__ == "AIMessage"
+            ):
+                if (
+                    "JSON results have been converted to BibTeX format"
+                    in last_message.content
+                    or "Please review the BibTeX entries" in last_message.content
+                    or "Please review and refine these entries" in last_message.content
+                ):
                     return "continue_refinement"
 
             return "end"
@@ -653,7 +697,7 @@ PDF tools require download_file() first. Always format final results as proper B
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.get("name", "Unknown")
                     args = tool_call.get("args", {})
-                    
+
                     if console:
                         console.print(f"🔧 [cyan]Using tool: {tool_name}[/cyan]")
                         if "query" in args:
@@ -671,21 +715,29 @@ PDF tools require download_file() first. Always format final results as proper B
                         elif "filename" in args:
                             console.print(f"   Filename: {args['filename']}")
                         elif "text" in args:
-                            console.print(f"   Text (preview): {str(args['text'])[:50]}...")
-                    
+                            console.print(
+                                f"   Text (preview): {str(args['text'])[:50]}..."
+                            )
+
                     # Always add to tool summary regardless of args structure
                     if "query" in args:
                         tool_summary.append(f"{tool_name}(query='{args['query']}')")
                     elif "url" in args:
                         tool_summary.append(f"{tool_name}(url='{args['url']}')")
                     elif "arxiv_id" in args:
-                        tool_summary.append(f"{tool_name}(arxiv_id='{args['arxiv_id']}')")
+                        tool_summary.append(
+                            f"{tool_name}(arxiv_id='{args['arxiv_id']}')"
+                        )
                     elif "doi" in args:
                         tool_summary.append(f"{tool_name}(doi='{args['doi']}')")
                     elif "pdf_path" in args:
-                        tool_summary.append(f"{tool_name}(pdf_path='{args['pdf_path']}')")
+                        tool_summary.append(
+                            f"{tool_name}(pdf_path='{args['pdf_path']}')"
+                        )
                     elif "filepath" in args:
-                        tool_summary.append(f"{tool_name}(filepath='{args['filepath']}')")
+                        tool_summary.append(
+                            f"{tool_name}(filepath='{args['filepath']}')"
+                        )
                     else:
                         # Fallback: always include tool name even if args don't match patterns
                         tool_summary.append(f"{tool_name}")
@@ -714,12 +766,16 @@ PDF tools require download_file() first. Always format final results as proper B
             search_results = []
 
             for message in reversed(messages):  # Start from most recent messages
-                if hasattr(message, "content") and message.content and message.__class__.__name__ == "AIMessage":
+                if (
+                    hasattr(message, "content")
+                    and message.content
+                    and message.__class__.__name__ == "AIMessage"
+                ):
                     content = message.content
-
 
                     # Look for BibTeX entries and extract them (final refined output)
                     import re
+
                     bibtex_pattern = (
                         r"```bibtex\s*((?:@\w+\{[^}]+,(?:[^@])*?\}\s*)+)\s*```"
                     )
@@ -741,9 +797,9 @@ PDF tools require download_file() first. Always format final results as proper B
                             # Clean up common JSON issues
                             json_content = json_match.group(1)
                             # Remove trailing commas before closing brackets/braces
-                            json_content = re.sub(r',\s*}', '}', json_content)
-                            json_content = re.sub(r',\s*]', ']', json_content)
-                            
+                            json_content = re.sub(r",\s*}", "}", json_content)
+                            json_content = re.sub(r",\s*]", "]", json_content)
+
                             results = json.loads(json_content)
                             if isinstance(results, list) and all(
                                 isinstance(r, dict) for r in results
@@ -773,7 +829,6 @@ PDF tools require download_file() first. Always format final results as proper B
 
             # Use reranked results if available, otherwise use all search results
             final_results = reranked_results if reranked_results else search_results
-            
 
             # Remove duplicates based on title with priority for formal publications
             seen_titles = {}  # title -> best_result
